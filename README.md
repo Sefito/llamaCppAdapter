@@ -335,6 +335,13 @@ This project is a wrapper/adapter for llama.cpp. Please refer to the [llama.cpp 
 - [GGUF Format Specification](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)
 - [Hugging Face Model Hub](https://huggingface.co/models?library=gguf)
 
+## Documentation
+
+- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide with examples
+- **[DEBUGGING.md](DEBUGGING.md)** - Complete guide to debugging in Xcode
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture and design decisions
+- **[INTEGRATION.md](INTEGRATION.md)** - Integrating llama.cpp C/C++ library
+
 ## Support
 
 For issues and questions:
