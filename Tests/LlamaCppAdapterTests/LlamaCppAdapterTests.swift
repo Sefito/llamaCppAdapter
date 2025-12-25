@@ -162,16 +162,20 @@ final class LlamaCppAdapterTests: XCTestCase {
         _ = FileManager.default.createFile(atPath: tempURL.path, contents: Data())
         defer { try? FileManager.default.removeItem(at: tempURL) }
         
-        let runner = try! LlamaRunner(modelURL: tempURL)
-        
-        // Try to generate without loading
         do {
-            _ = try await runner.generate(from: "test")
-            XCTFail("Should have thrown an error")
-        } catch LlamaError.modelLoadFailed(let reason) {
-            XCTAssertTrue(reason.contains("not loaded"))
+            let runner = try LlamaRunner(modelURL: tempURL)
+            
+            // Try to generate without loading
+            do {
+                _ = try await runner.generate(from: "test")
+                XCTFail("Should have thrown an error")
+            } catch LlamaError.modelLoadFailed(let reason) {
+                XCTAssertTrue(reason.contains("not loaded"))
+            } catch {
+                XCTFail("Wrong error type: \(error)")
+            }
         } catch {
-            XCTFail("Wrong error type: \(error)")
+            XCTFail("Failed to initialize runner: \(error)")
         }
     }
 }

@@ -2,6 +2,11 @@ import Foundation
 
 /// Main interface for running Llama model inference
 /// This class provides a high-level Swift API for the llama.cpp library
+///
+/// Thread Safety:
+/// - All mutable state is protected by a serial dispatch queue
+/// - Public methods can be called from any thread safely
+/// - Model operations are serialized to prevent concurrent access
 @available(iOS 14.0, macOS 11.0, *)
 public final class LlamaRunner: @unchecked Sendable {
     

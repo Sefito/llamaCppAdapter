@@ -49,16 +49,21 @@ public enum LlamaUtilities {
         }
         
         // Check GGUF magic number (first 4 bytes should be "GGUF" for GGUF format)
-        guard let fileHandle = try? FileHandle(forReadingFrom: url),
-              let magicBytes = try? fileHandle.read(upToCount: 4),
+        guard let fileHandle = try? FileHandle(forReadingFrom: url) else {
+            return false
+        }
+        
+        defer {
+            try? fileHandle.close()
+        }
+        
+        guard let magicBytes = try? fileHandle.read(upToCount: 4),
               magicBytes.count == 4 else {
             return false
         }
         
         // GGUF magic: 0x47475546 (ASCII "GGUF")
         let ggufMagic = Data([0x47, 0x47, 0x55, 0x46])
-        
-        try? fileHandle.close()
         
         return magicBytes == ggufMagic
     }
