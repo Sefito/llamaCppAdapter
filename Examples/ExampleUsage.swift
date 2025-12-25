@@ -1,10 +1,13 @@
 import Foundation
 import LlamaCppAdapter
 
-/// Example usage of LlamaCppAdapter
+/// Example usage of LlamaCppAdapter with real llama.cpp integration
 /// 
 /// This file demonstrates how to use the LlamaCppAdapter library
-/// to run Llama models on iOS devices and simulators
+/// to run Llama models on iOS devices and simulators using the actual
+/// llama.cpp C/C++ library for inference.
+///
+/// ✅ Integration Status: COMPLETE - All examples use real llama.cpp API
 
 @available(iOS 14.0, macOS 11.0, *)
 class LlamaExample {
