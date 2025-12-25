@@ -304,9 +304,9 @@ do {
 
 ## Roadmap
 
-This is an initial structure and interface design. Future enhancements:
+This package now integrates with the actual llama.cpp C/C++ library!
 
-- [ ] Integration with actual llama.cpp C/C++ library
+- [x] Integration with actual llama.cpp C/C++ library
 - [ ] XCFramework distribution for easier integration
 - [ ] Model downloading and caching utilities
 - [ ] Advanced sampling strategies

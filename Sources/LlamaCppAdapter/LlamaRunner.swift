@@ -19,11 +19,14 @@ public final class LlamaRunner: @unchecked Sendable {
     // Thread-safe state management
     private let queue = DispatchQueue(label: "com.llamacpp.runner", qos: .userInitiated)
     
-    // Placeholder for native model/context pointers
-    // In a real implementation, these would be OpaquePointer types
-    // pointing to llama_model and llama_context
+    // Native llama.cpp model and context pointers
     private var modelPointer: OpaquePointer?
     private var contextPointer: OpaquePointer?
+    private var samplerPointer: OpaquePointer?
+    
+    // Backend initialization flag
+    private static var backendInitialized = false
+    private static let backendLock = NSLock()
     
     // MARK: - Initialization
     
@@ -42,6 +45,14 @@ public final class LlamaRunner: @unchecked Sendable {
         
         // Validate configuration
         try validateConfiguration(configuration)
+        
+        // Initialize backend once
+        Self.backendLock.lock()
+        if !Self.backendInitialized {
+            llama_backend_init()
+            Self.backendInitialized = true
+        }
+        Self.backendLock.unlock()
     }
     
     /// Convenience initializer for model path string
@@ -62,17 +73,70 @@ public final class LlamaRunner: @unchecked Sendable {
                     return
                 }
                 
-                // TODO: Implement actual llama.cpp model loading
-                // This is a placeholder for the C API call:
-                // llama_model_params params = llama_model_default_params();
-                // self.modelPointer = llama_load_model_from_file(modelURL.path, params);
-                // if (self.modelPointer == nil) {
-                //     continuation.resume(throwing: LlamaError.modelLoadFailed(reason: "Failed to load model"))
-                //     return
-                // }
-                
-                self.isModelLoaded = true
-                continuation.resume()
+                do {
+                    // Configure model parameters
+                    var modelParams = llama_model_default_params()
+                    modelParams.n_gpu_layers = self.configuration.useMetalAcceleration ? 999 : 0
+                    modelParams.use_mmap = true
+                    
+                    // Load model
+                    guard let model = llama_model_load_from_file(
+                        self.modelURL.path.cString(using: .utf8),
+                        modelParams
+                    ) else {
+                        continuation.resume(throwing: LlamaError.modelLoadFailed(
+                            reason: "Failed to load model from file"
+                        ))
+                        return
+                    }
+                    self.modelPointer = model
+                    
+                    // Configure context parameters
+                    var contextParams = llama_context_default_params()
+                    contextParams.n_ctx = UInt32(self.configuration.contextSize)
+                    contextParams.n_batch = UInt32(self.configuration.batchSize)
+                    contextParams.n_threads = Int32(self.configuration.threads)
+                    contextParams.n_threads_batch = Int32(self.configuration.threads)
+                    
+                    // Create context
+                    guard let context = llama_new_context_with_model(model, contextParams) else {
+                        llama_model_free(model)
+                        self.modelPointer = nil
+                        continuation.resume(throwing: LlamaError.modelLoadFailed(
+                            reason: "Failed to create context"
+                        ))
+                        return
+                    }
+                    self.contextPointer = context
+                    
+                    // Create sampler
+                    var samplerParams = llama_sampler_chain_default_params()
+                    samplerParams.no_perf = false
+                    
+                    guard let sampler = llama_sampler_chain_init(samplerParams) else {
+                        llama_free(context)
+                        llama_model_free(model)
+                        self.modelPointer = nil
+                        self.contextPointer = nil
+                        continuation.resume(throwing: LlamaError.modelLoadFailed(
+                            reason: "Failed to create sampler"
+                        ))
+                        return
+                    }
+                    self.samplerPointer = sampler
+                    
+                    // Add sampling strategies
+                    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(Int32(self.configuration.topK)))
+                    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(self.configuration.topP, 1))
+                    llama_sampler_chain_add(sampler, llama_sampler_init_temp(self.configuration.temperature))
+                    llama_sampler_chain_add(sampler, llama_sampler_init_dist(UInt32(LLAMA_DEFAULT_SEED)))
+                    
+                    self.isModelLoaded = true
+                    continuation.resume()
+                    
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -80,12 +144,21 @@ public final class LlamaRunner: @unchecked Sendable {
     /// Unload the model from memory
     public func unloadModel() {
         queue.sync {
-            // TODO: Implement cleanup
-            // llama_free_model(modelPointer)
-            // llama_free(contextPointer)
+            if let sampler = samplerPointer {
+                llama_sampler_free(sampler)
+                samplerPointer = nil
+            }
             
-            modelPointer = nil
-            contextPointer = nil
+            if let context = contextPointer {
+                llama_free(context)
+                contextPointer = nil
+            }
+            
+            if let model = modelPointer {
+                llama_model_free(model)
+                modelPointer = nil
+            }
+            
             isModelLoaded = false
         }
     }
@@ -137,17 +210,33 @@ public final class LlamaRunner: @unchecked Sendable {
     
     /// Get information about the loaded model
     public func getModelInfo() -> LlamaModelInfo? {
-        guard isModelLoaded else { return nil }
+        guard isModelLoaded, let model = modelPointer else { return nil }
         
-        // TODO: Implement actual metadata extraction from llama.cpp
-        // This would call llama_model_meta_* functions
+        // Get model metadata
+        let nVocab = llama_model_n_vocab(model)
+        let nCtxTrain = llama_model_n_ctx_train(model)
+        
+        // Get architecture name
+        var archBuf = [CChar](repeating: 0, count: 128)
+        llama_model_meta_val_str(model, "general.architecture", &archBuf, 128)
+        let architecture = String(cString: archBuf)
+        
+        // Get parameter count if available
+        var paramCountBuf = [CChar](repeating: 0, count: 64)
+        let paramCountResult = llama_model_meta_val_str(model, "general.parameter_count", &paramCountBuf, 64)
+        let parameterCount: Int? = paramCountResult > 0 ? Int(String(cString: paramCountBuf)) : nil
+        
+        // Get quantization type
+        var quantBuf = [CChar](repeating: 0, count: 64)
+        llama_model_meta_val_str(model, "general.file_type", &quantBuf, 64)
+        let quantization = String(cString: quantBuf)
         
         return LlamaModelInfo(
-            architecture: "llama",
-            parameterCount: nil,
-            contextLength: configuration.contextSize,
-            vocabularySize: nil,
-            quantizationType: nil
+            architecture: architecture.isEmpty ? nil : architecture,
+            parameterCount: parameterCount,
+            contextLength: Int(nCtxTrain),
+            vocabularySize: Int(nVocab),
+            quantizationType: quantization.isEmpty ? nil : quantization
         )
     }
     
@@ -179,28 +268,112 @@ public final class LlamaRunner: @unchecked Sendable {
             throw LlamaError.invalidPrompt
         }
         
-        guard isModelLoaded else {
+        guard isModelLoaded, let model = modelPointer, let context = contextPointer, let sampler = samplerPointer else {
             throw LlamaError.modelLoadFailed(reason: "Model not loaded. Call loadModel() first.")
         }
         
-        // TODO: Implement actual token generation loop
-        // This is a placeholder implementation that would be replaced with
-        // actual llama.cpp C API calls:
-        //
-        // 1. Tokenize prompt: llama_tokenize(...)
-        // 2. Evaluate prompt: llama_decode(...)
-        // 3. Sample tokens: llama_sampler_sample(...)
-        // 4. Convert to string: llama_token_to_piece(...)
-        // 5. Yield tokens through continuation
+        // Tokenize the prompt
+        let nPromptTokens = -llama_tokenize(model, prompt, prompt.utf8.count, nil, 0, true, false)
+        guard nPromptTokens > 0 else {
+            continuation.finish(throwing: LlamaError.invalidPrompt)
+            return
+        }
         
-        // Placeholder: Generate a simple response token
-        let placeholderToken = LlamaToken(
-            text: "[Token generation not yet implemented - this is a placeholder]",
-            id: 0,
-            probability: 1.0
+        var promptTokens = [llama_token](repeating: 0, count: Int(nPromptTokens))
+        let actualTokenCount = llama_tokenize(
+            model,
+            prompt,
+            prompt.utf8.count,
+            &promptTokens,
+            Int32(promptTokens.count),
+            true,
+            false
         )
         
-        continuation.yield(placeholderToken)
+        guard actualTokenCount == nPromptTokens else {
+            continuation.finish(throwing: LlamaError.modelLoadFailed(reason: "Tokenization mismatch"))
+            return
+        }
+        
+        // Clear the context
+        llama_kv_cache_clear(context)
+        
+        // Create batch for prompt processing
+        var batch = llama_batch_init(Int32(promptTokens.count), 0, 1)
+        defer { llama_batch_free(batch) }
+        
+        // Add prompt tokens to batch
+        for (i, token) in promptTokens.enumerated() {
+            llama_batch_add(&batch, token, Int32(i), [0], false)
+        }
+        
+        // Ensure the last token generates logits
+        if batch.n_tokens > 0 {
+            batch.logits[Int(batch.n_tokens) - 1] = 1
+        }
+        
+        // Process prompt
+        if llama_decode(context, batch) != 0 {
+            continuation.finish(throwing: LlamaError.modelLoadFailed(reason: "Failed to decode prompt"))
+            return
+        }
+        
+        // Reset sampler
+        llama_sampler_reset(sampler)
+        
+        // Generate tokens
+        var nCur = batch.n_tokens
+        var nDecode = 0
+        let maxTokens = Int32(configuration.maxTokens)
+        
+        while nDecode < maxTokens {
+            // Sample next token
+            let newTokenId = llama_sampler_sample(sampler, context, -1)
+            
+            // Check for end of generation
+            if llama_token_is_eog(model, newTokenId) {
+                break
+            }
+            
+            // Convert token to text
+            var tokenBuf = [CChar](repeating: 0, count: 256)
+            let tokenLen = llama_token_to_piece(model, newTokenId, &tokenBuf, 256, 0, false)
+            
+            if tokenLen > 0 {
+                let tokenText = String(cString: tokenBuf)
+                
+                // Check for stop tokens
+                var shouldStop = false
+                for stopToken in configuration.stopTokens {
+                    if tokenText.contains(stopToken) {
+                        shouldStop = true
+                        break
+                    }
+                }
+                
+                if shouldStop {
+                    break
+                }
+                
+                // Yield the token
+                let token = LlamaToken(text: tokenText, id: newTokenId, probability: nil)
+                continuation.yield(token)
+            }
+            
+            // Prepare batch for next token
+            llama_batch_clear(&batch)
+            llama_batch_add(&batch, newTokenId, nCur, [0], true)
+            
+            nCur += 1
+            nDecode += 1
+            
+            // Decode next token
+            if llama_decode(context, batch) != 0 {
+                continuation.finish(throwing: LlamaError.modelLoadFailed(reason: "Failed to decode token"))
+                return
+            }
+        }
+        
         continuation.finish()
     }
     
