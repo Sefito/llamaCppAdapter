@@ -65,3 +65,11 @@ tmp/
 *.a
 *.so
 *.dylib
+
+# XCFramework build artifacts
+build/
+xcframework/
+*.xcframework
+*.xcframework.zip
+*.xcframework.zip.sha256
+*.xcarchive

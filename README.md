@@ -21,7 +21,7 @@ A Swift Package for integrating [llama.cpp](https://github.com/ggml-org/llama.cp
 
 ## Installation
 
-### Swift Package Manager
+### Swift Package Manager (Recommended)
 
 Add LlamaCppAdapter to your project using Xcode:
 
@@ -36,6 +36,22 @@ dependencies: [
     .package(url: "https://github.com/Sefito/llamaCppAdapter", from: "1.0.0")
 ]
 ```
+
+### XCFramework (Binary Distribution)
+
+For pre-compiled binary integration:
+
+1. **Download** the latest `LlamaCppAdapter.xcframework.zip` from [Releases](https://github.com/Sefito/llamaCppAdapter/releases)
+2. **Extract** the ZIP file
+3. **Drag** `LlamaCppAdapter.xcframework` into your Xcode project
+4. **Ensure** it's set to "Embed & Sign" in your target's Frameworks section
+
+Or build it yourself:
+```bash
+./build-xcframework.sh
+```
+
+See [XCFRAMEWORK.md](XCFRAMEWORK.md) for detailed instructions and build guide.
 
 ## Quick Start
 
@@ -307,7 +323,7 @@ do {
 This package now integrates with the actual llama.cpp C/C++ library!
 
 - [x] Integration with actual llama.cpp C/C++ library
-- [ ] XCFramework distribution for easier integration
+- [x] XCFramework distribution for easier integration
 - [ ] Model downloading and caching utilities
 - [ ] Advanced sampling strategies
 - [ ] Batch inference support
@@ -341,6 +357,7 @@ This project is a wrapper/adapter for llama.cpp. Please refer to the [llama.cpp 
 - **[DEBUGGING.md](DEBUGGING.md)** - Complete guide to debugging in Xcode
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture and design decisions
 - **[INTEGRATION.md](INTEGRATION.md)** - Integrating llama.cpp C/C++ library
+- **[XCFRAMEWORK.md](XCFRAMEWORK.md)** - Building and using XCFramework distribution
 
 ## Support
 

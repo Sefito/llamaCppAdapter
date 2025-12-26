@@ -1,0 +1,110 @@
+name: Build XCFramework
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: 'Upload artifacts to release'
+        required: false
+        default: 'false'
+
+jobs:
+  build-xcframework:
+    name: Build XCFramework
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Select Xcode version
+      run: sudo xcode-select -switch /Applications/Xcode_15.0.app/Contents/Developer
+    
+    - name: Install dependencies
+      run: |
+        # Install xcpretty for better build output
+        gem install xcpretty
+    
+    - name: Resolve Swift Package dependencies
+      run: |
+        swift package resolve
+    
+    - name: Build XCFramework
+      run: |
+        chmod +x build-xcframework.sh
+        ./build-xcframework.sh
+    
+    - name: Verify XCFramework
+      run: |
+        if [ ! -d "xcframework/LlamaCppAdapter.xcframework" ]; then
+          echo "Error: XCFramework not found!"
+          exit 1
+        fi
+        
+        if [ ! -f "xcframework/LlamaCppAdapter.xcframework.zip" ]; then
+          echo "Error: XCFramework ZIP not found!"
+          exit 1
+        fi
+        
+        echo "XCFramework verification passed!"
+        ls -lh xcframework/
+    
+    - name: Upload XCFramework as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: LlamaCppAdapter-xcframework
+        path: |
+          xcframework/LlamaCppAdapter.xcframework.zip
+          xcframework/LlamaCppAdapter.xcframework.zip.sha256
+        retention-days: 30
+    
+    - name: Get release info
+      if: github.event_name == 'release'
+      id: get_release
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const release = context.payload.release;
+          return release.upload_url;
+    
+    - name: Upload XCFramework to release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: xcframework/LlamaCppAdapter.xcframework.zip
+        asset_name: LlamaCppAdapter.xcframework.zip
+        asset_content_type: application/zip
+    
+    - name: Upload checksum to release
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: xcframework/LlamaCppAdapter.xcframework.zip.sha256
+        asset_name: LlamaCppAdapter.xcframework.zip.sha256
+        asset_content_type: text/plain
+    
+    - name: Create job summary
+      if: always()
+      run: |
+        echo "## XCFramework Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "xcframework/LlamaCppAdapter.xcframework.zip" ]; then
+          echo "✅ XCFramework built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: $(du -h xcframework/LlamaCppAdapter.xcframework.zip | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Checksum**: \`$(cat xcframework/LlamaCppAdapter.xcframework.zip.sha256)\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ XCFramework build failed" >> $GITHUB_STEP_SUMMARY
+        fi
