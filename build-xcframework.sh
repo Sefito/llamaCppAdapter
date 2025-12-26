@@ -72,18 +72,35 @@ build_framework() {
     
     print_info "Building ${FRAMEWORK_NAME} for ${platform_name}..."
     
-    xcodebuild archive \
-        -scheme ${FRAMEWORK_NAME} \
-        -sdk ${sdk} \
-        -destination "${destination}" \
-        -archivePath "${archive_path}" \
-        -derivedDataPath "${DERIVED_DATA_PATH}" \
-        SKIP_INSTALL=NO \
-        BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-        SWIFT_SERIALIZE_DEBUGGING_OPTIONS=NO \
-        | xcpretty || true
+    # Check if xcpretty is available for better output formatting
+    if command -v xcpretty &> /dev/null; then
+        set +e  # Temporarily disable exit on error to capture status
+        xcodebuild archive \
+            -scheme ${FRAMEWORK_NAME} \
+            -sdk ${sdk} \
+            -destination "${destination}" \
+            -archivePath "${archive_path}" \
+            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SWIFT_SERIALIZE_DEBUGGING_OPTIONS=NO \
+            | xcpretty
+        local build_status=${PIPESTATUS[0]}
+        set -e  # Re-enable exit on error
+    else
+        xcodebuild archive \
+            -scheme ${FRAMEWORK_NAME} \
+            -sdk ${sdk} \
+            -destination "${destination}" \
+            -archivePath "${archive_path}" \
+            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            SWIFT_SERIALIZE_DEBUGGING_OPTIONS=NO
+        local build_status=$?
+    fi
     
-    if [ $? -eq 0 ]; then
+    if [ $build_status -eq 0 ]; then
         print_info "${platform_name} build complete ✓"
     else
         print_error "${platform_name} build failed"
