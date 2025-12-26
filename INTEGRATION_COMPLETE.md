@@ -4,32 +4,32 @@ This document summarizes the successful integration of the actual llama.cpp C/C+
 
 ## What Was Done
 
-### 1. Added llama.cpp Submodule
-- Added `https://github.com/ggml-org/llama.cpp` as a git submodule in `third-party/llama.cpp`
+### 1. Added llama.cpp as Swift Package Dependency
+- Added `https://github.com/ggerganov/llama.cpp` as a Swift Package Manager dependency
+- Pinned to revision `b6d6c5289f1c9c677657c380591201ddb210b649` for stability
 - This provides the complete, official llama.cpp implementation
-- Automatic version tracking and easy updates
+- Automatic version tracking and easy updates via Package.swift
 
 ### 2. Updated Package.swift
-Created a new `llama` target that compiles the llama.cpp C/C++ code:
-- **26 llama.cpp source files** - All core functionality
-- **9 GGML source files** - Tensor operations and backend
-- **6 Metal source files** - GPU acceleration for iOS/macOS
-- **Metal shader resource** - `ggml-metal.metal` for GPU kernels
-- Proper header search paths and compiler flags
-- Metal, Accelerate, and Foundation framework linking
+Configured the package to use llama.cpp as a direct dependency:
+- Removed custom `llama` target definition
+- Added dependency: `.package(url: "https://github.com/ggerganov/llama.cpp.git", revision: "...")`
+- LlamaCppAdapter target now depends on `.product(name: "llama", package: "llama.cpp")`
+- llama.cpp package handles all C/C++ compilation internally
+- Metal, Accelerate, and Foundation framework linking handled by llama.cpp package
 
-### 3. Updated C Bridge Layer
-- Simplified `llama_adapter.h` to directly include `llama.h`
-- Removed placeholder wrapper functions
+### 3. Added llama Module Import
+- Added `import llama` to Swift files that use llama.cpp functions
 - Direct access to all llama.cpp C API functions from Swift
+- Simplified integration through SPM module system
 
 ### 4. Implemented Complete Swift Integration
-Updated `LlamaRunner.swift` with real llama.cpp API calls (37 llama.cpp function calls):
+Updated `LlamaRunner.swift` with real llama.cpp API calls:
 
 #### Model Loading (`loadModel()`)
 - `llama_backend_init()` - Initialize backend once globally
 - `llama_model_default_params()` - Get default model parameters
-- `llama_model_load_from_file()` - Load GGUF model file
+- `llama_load_model_from_file()` - Load GGUF model file
 - `llama_context_default_params()` - Get default context parameters
 - `llama_new_context_with_model()` - Create inference context
 - `llama_sampler_chain_init()` - Initialize sampling chain
@@ -40,7 +40,7 @@ Updated `LlamaRunner.swift` with real llama.cpp API calls (37 llama.cpp function
 - `llama_tokenize()` - Convert text to tokens
 - `llama_kv_cache_clear()` - Clear KV cache for new generation
 - `llama_batch_init()` / `llama_batch_free()` - Batch management
-- `llama_batch_add()` / `llama_batch_clear()` - Add tokens to batch
+- Direct batch manipulation - Manually set batch.token, batch.pos, etc.
 - `llama_decode()` - Process tokens through model
 - `llama_sampler_reset()` - Reset sampler state
 - `llama_sampler_sample()` - Sample next token
@@ -48,14 +48,14 @@ Updated `LlamaRunner.swift` with real llama.cpp API calls (37 llama.cpp function
 - `llama_token_to_piece()` - Convert token ID to text
 
 #### Model Info (`getModelInfo()`)
-- `llama_model_n_vocab()` - Get vocabulary size
-- `llama_model_n_ctx_train()` - Get training context size
+- `llama_n_vocab()` - Get vocabulary size
+- `llama_n_ctx_train()` - Get training context size
 - `llama_model_meta_val_str()` - Extract metadata from model
 
 #### Cleanup (`unloadModel()`, `deinit`)
 - `llama_sampler_free()` - Free sampler
 - `llama_free()` - Free context
-- `llama_model_free()` - Free model
+- `llama_free_model()` - Free model
 
 ### 5. Updated Documentation
 - **README.md** - Marked integration as complete
@@ -182,19 +182,21 @@ First token latency: 100ms - 2s depending on prompt length.
 
 ## File Changes Summary
 
-- `Package.swift` - Added llama target with 41 source files
-- `Sources/LlamaCppAdapter/LlamaRunner.swift` - 383 lines, 37 llama.cpp API calls
-- `Sources/LlamaCppAdapter/include/llama_adapter.h` - Simplified to include llama.h
-- `README.md` - Updated roadmap
-- `INTEGRATION.md` - Complete integration documentation
-- `.gitmodules` - Added llama.cpp submodule
-- `third-party/llama.cpp/` - Full llama.cpp repository
+- `Package.swift` - Replaced git submodule with SPM dependency
+- `.gitmodules` - Removed (no longer using git submodule)
+- `third-party/llama.cpp/` - Removed (managed by SPM instead)
+- `Sources/LlamaCppAdapter/LlamaRunner.swift` - Added `import llama`, updated API calls
+- `README.md` - Updated dependency structure
+- `INTEGRATION.md` - Updated integration documentation
+- `INTEGRATION_COMPLETE.md` - This summary document updated
 
 ## Next Steps for Users
 
-1. **Clone the repository** with submodules:
-   ```bash
-   git clone --recursive https://github.com/Sefito/llamaCppAdapter
+1. **Add as dependency** to your Swift project:
+   ```swift
+   dependencies: [
+       .package(url: "https://github.com/Sefito/llamaCppAdapter", from: "1.0.0")
+   ]
    ```
 
 2. **Get a GGUF model**:
@@ -210,6 +212,7 @@ First token latency: 100ms - 2s depending on prompt length.
    - Open in Xcode
    - Select an iOS device or simulator target
    - Build and run (⌘R)
+   - SPM will automatically fetch and build llama.cpp
 
 5. **Try the example**:
    ```swift

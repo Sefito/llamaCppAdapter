@@ -1,4 +1,5 @@
 import Foundation
+import llama
 
 /// Main interface for running Llama model inference
 /// This class provides a high-level Swift API for the llama.cpp library
@@ -22,7 +23,7 @@ public final class LlamaRunner: @unchecked Sendable {
     // Native llama.cpp model and context pointers
     private var modelPointer: OpaquePointer?
     private var contextPointer: OpaquePointer?
-    private var samplerPointer: OpaquePointer?
+    private var samplerPointer: UnsafeMutablePointer<llama_sampler>?
     
     // Backend initialization flag
     private static var backendInitialized = false
@@ -73,70 +74,65 @@ public final class LlamaRunner: @unchecked Sendable {
                     return
                 }
                 
-                do {
-                    // Configure model parameters
-                    var modelParams = llama_model_default_params()
-                    modelParams.n_gpu_layers = self.configuration.useMetalAcceleration ? 999 : 0
-                    modelParams.use_mmap = true
-                    
-                    // Load model
-                    guard let model = llama_model_load_from_file(
-                        self.modelURL.path.cString(using: .utf8),
-                        modelParams
-                    ) else {
-                        continuation.resume(throwing: LlamaError.modelLoadFailed(
-                            reason: "Failed to load model from file"
-                        ))
-                        return
-                    }
-                    self.modelPointer = model
-                    
-                    // Configure context parameters
-                    var contextParams = llama_context_default_params()
-                    contextParams.n_ctx = UInt32(self.configuration.contextSize)
-                    contextParams.n_batch = UInt32(self.configuration.batchSize)
-                    contextParams.n_threads = Int32(self.configuration.threads)
-                    contextParams.n_threads_batch = Int32(self.configuration.threads)
-                    
-                    // Create context
-                    guard let context = llama_new_context_with_model(model, contextParams) else {
-                        llama_model_free(model)
-                        self.modelPointer = nil
-                        continuation.resume(throwing: LlamaError.modelLoadFailed(
-                            reason: "Failed to create context"
-                        ))
-                        return
-                    }
-                    self.contextPointer = context
-                    
-                    // Create sampler
-                    var samplerParams = llama_sampler_chain_default_params()
-                    samplerParams.no_perf = false
-                    
-                    guard let sampler = llama_sampler_chain_init(samplerParams) else {
-                        llama_free(context)
-                        llama_model_free(model)
-                        self.modelPointer = nil
-                        self.contextPointer = nil
-                        continuation.resume(throwing: LlamaError.modelLoadFailed(
-                            reason: "Failed to create sampler"
-                        ))
-                        return
-                    }
-                    self.samplerPointer = sampler
-                    
-                    // Add sampling strategies
-                    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(Int32(self.configuration.topK)))
-                    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(self.configuration.topP, 1))
-                    llama_sampler_chain_add(sampler, llama_sampler_init_temp(self.configuration.temperature))
-                    llama_sampler_chain_add(sampler, llama_sampler_init_dist(UInt32(LLAMA_DEFAULT_SEED)))
-                    
-                    self.isModelLoaded = true
-                    continuation.resume()
-                    
-                } catch {
-                    continuation.resume(throwing: error)
+                // Configure model parameters
+                var modelParams = llama_model_default_params()
+                modelParams.n_gpu_layers = self.configuration.useMetalAcceleration ? 999 : 0
+                modelParams.use_mmap = true
+                
+                // Load model
+                guard let model = llama_load_model_from_file(
+                    self.modelURL.path.cString(using: .utf8),
+                    modelParams
+                ) else {
+                    continuation.resume(throwing: LlamaError.modelLoadFailed(
+                        reason: "Failed to load model from file"
+                    ))
+                    return
                 }
+                self.modelPointer = model
+                
+                // Configure context parameters
+                var contextParams = llama_context_default_params()
+                contextParams.n_ctx = UInt32(self.configuration.contextSize)
+                contextParams.n_batch = UInt32(self.configuration.batchSize)
+                contextParams.n_threads = Int32(self.configuration.threads)
+                contextParams.n_threads_batch = Int32(self.configuration.threads)
+                
+                // Create context
+                guard let context = llama_new_context_with_model(model, contextParams) else {
+                    llama_free_model(model)
+                    self.modelPointer = nil
+                    continuation.resume(throwing: LlamaError.modelLoadFailed(
+                        reason: "Failed to create context"
+                    ))
+                    return
+                }
+                self.contextPointer = context
+                
+                // Create sampler
+                var samplerParams = llama_sampler_chain_default_params()
+                samplerParams.no_perf = false
+                
+                guard let sampler = llama_sampler_chain_init(samplerParams) else {
+                    llama_free(context)
+                    llama_free_model(model)
+                    self.modelPointer = nil
+                    self.contextPointer = nil
+                    continuation.resume(throwing: LlamaError.modelLoadFailed(
+                        reason: "Failed to create sampler"
+                    ))
+                    return
+                }
+                self.samplerPointer = sampler
+                
+                // Add sampling strategies
+                llama_sampler_chain_add(sampler, llama_sampler_init_top_k(Int32(self.configuration.topK)))
+                llama_sampler_chain_add(sampler, llama_sampler_init_top_p(self.configuration.topP, 1))
+                llama_sampler_chain_add(sampler, llama_sampler_init_temp(self.configuration.temperature))
+                llama_sampler_chain_add(sampler, llama_sampler_init_dist(UInt32(LLAMA_DEFAULT_SEED)))
+                
+                self.isModelLoaded = true
+                continuation.resume()
             }
         }
     }
@@ -155,7 +151,7 @@ public final class LlamaRunner: @unchecked Sendable {
             }
             
             if let model = modelPointer {
-                llama_model_free(model)
+                llama_free_model(model)
                 modelPointer = nil
             }
             
@@ -213,8 +209,8 @@ public final class LlamaRunner: @unchecked Sendable {
         guard isModelLoaded, let model = modelPointer else { return nil }
         
         // Get model metadata
-        let nVocab = llama_model_n_vocab(model)
-        let nCtxTrain = llama_model_n_ctx_train(model)
+        let nVocab = llama_n_vocab(model)
+        let nCtxTrain = llama_n_ctx_train(model)
         
         // Get architecture name
         var archBuf = [CChar](repeating: 0, count: 128)
@@ -273,7 +269,7 @@ public final class LlamaRunner: @unchecked Sendable {
         }
         
         // Tokenize the prompt
-        let nPromptTokens = -llama_tokenize(model, prompt, prompt.utf8.count, nil, 0, true, false)
+        let nPromptTokens = -llama_tokenize(model, prompt, Int32(prompt.utf8.count), nil, 0, true, false)
         guard nPromptTokens > 0 else {
             continuation.finish(throwing: LlamaError.invalidPrompt)
             return
@@ -283,7 +279,7 @@ public final class LlamaRunner: @unchecked Sendable {
         let actualTokenCount = llama_tokenize(
             model,
             prompt,
-            prompt.utf8.count,
+            Int32(prompt.utf8.count),
             &promptTokens,
             Int32(promptTokens.count),
             true,
@@ -300,12 +296,19 @@ public final class LlamaRunner: @unchecked Sendable {
         
         // Create batch for prompt processing
         var batch = llama_batch_init(Int32(promptTokens.count), 0, 1)
-        defer { llama_batch_free(batch) }
+        defer { 
+            llama_batch_free(batch) 
+        }
         
         // Add prompt tokens to batch
         for (i, token) in promptTokens.enumerated() {
-            llama_batch_add(&batch, token, Int32(i), [0], false)
+            batch.token[i] = token
+            batch.pos[i] = Int32(i)
+            batch.n_seq_id[i] = 1
+            batch.seq_id[i]![0] = 0
+            batch.logits[i] = 0
         }
+        batch.n_tokens = Int32(promptTokens.count)
         
         // Ensure the last token generates logits
         if batch.n_tokens > 0 {
@@ -361,8 +364,12 @@ public final class LlamaRunner: @unchecked Sendable {
             }
             
             // Prepare batch for next token
-            llama_batch_clear(&batch)
-            llama_batch_add(&batch, newTokenId, nCur, [0], true)
+            batch.n_tokens = 1
+            batch.token[0] = newTokenId
+            batch.pos[0] = nCur
+            batch.n_seq_id[0] = 1
+            batch.seq_id[0]![0] = 0
+            batch.logits[0] = 1
             
             nCur += 1
             nDecode += 1
