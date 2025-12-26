@@ -6,8 +6,8 @@ This guide explains the llama.cpp C/C++ library integration with this Swift pack
 
 This package now includes a **complete integration** with the actual llama.cpp C/C++ library! The integration includes:
 
-- ✅ llama.cpp as a git submodule (automatically managed)
-- ✅ Complete C/C++ build configuration in Package.swift
+- ✅ llama.cpp as a Swift Package Manager dependency (automatically managed)
+- ✅ Complete C/C++ build configuration from llama.cpp package
 - ✅ Metal acceleration support for GPU inference
 - ✅ Full Swift API implementation calling llama.cpp C functions
 - ✅ Model loading and context management
@@ -58,7 +58,7 @@ The integration follows a clean layered architecture:
 The `loadModel()` function in `LlamaRunner.swift` performs the following:
 
 1. **Initializes model parameters** - Configures GPU layers, memory mapping
-2. **Loads the model** - Calls `llama_model_load_from_file()`
+2. **Loads the model** - Calls `llama_load_model_from_file()`
 3. **Creates context** - Calls `llama_new_context_with_model()`
 4. **Initializes sampler** - Sets up the sampling chain with top-k, top-p, and temperature
 
@@ -160,17 +160,24 @@ Three presets are available:
 - `.lowMemory` - For devices with limited RAM
 - `.highPerformance` - For devices with ample resources
 
-## llama.cpp Update Process
+## llama.cpp Dependency Management
 
-The llama.cpp submodule can be updated to get the latest features:
+The llama.cpp library is managed as a Swift Package Manager dependency, pinned to a specific revision for stability:
 
-```bash
-cd third-party/llama.cpp
-git pull origin master
-cd ../..
-git add third-party/llama.cpp
-git commit -m "Update llama.cpp to latest version"
+```swift
+dependencies: [
+    .package(url: "https://github.com/ggerganov/llama.cpp.git", revision: "b6d6c5289f1c9c677657c380591201ddb210b649")
+]
 ```
+
+### Updating llama.cpp
+
+To update to a newer version of llama.cpp:
+
+1. Check the [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases)
+2. Update the revision in `Package.swift`
+3. Test the build and ensure API compatibility
+4. Update any code that uses changed APIs
 
 ## Troubleshooting
 

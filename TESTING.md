@@ -367,9 +367,6 @@ swift package clean
 
 # Update dependencies
 swift package update
-
-# Verify submodule
-git submodule update --init --recursive
 ```
 
 ### Model Loading Fails
@@ -403,8 +400,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: recursive
       
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
