@@ -15,6 +15,10 @@ jobs:
     name: Build XCFramework
     runs-on: macos-latest
     
+    permissions:
+      contents: write  # Required for uploading release assets
+      actions: read    # Required for workflow actions
+    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
