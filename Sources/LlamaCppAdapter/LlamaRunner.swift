@@ -298,14 +298,15 @@ public final class LlamaRunner: @unchecked Sendable {
         
         // Create batch for prompt processing
         var batch = llama_batch_init(Int32(promptTokens.count), 0, 1)
-        defer { llama_batch_free(batch) }
+        defer { 
+            llama_batch_free(batch) 
+        }
         
         // Add prompt tokens to batch
         for (i, token) in promptTokens.enumerated() {
             batch.token[i] = token
             batch.pos[i] = Int32(i)
             batch.n_seq_id[i] = 1
-            batch.seq_id[i] = UnsafeMutablePointer<llama_seq_id>.allocate(capacity: 1)
             batch.seq_id[i]![0] = 0
             batch.logits[i] = 0
         }
@@ -369,9 +370,6 @@ public final class LlamaRunner: @unchecked Sendable {
             batch.token[0] = newTokenId
             batch.pos[0] = nCur
             batch.n_seq_id[0] = 1
-            if batch.seq_id[0] == nil {
-                batch.seq_id[0] = UnsafeMutablePointer<llama_seq_id>.allocate(capacity: 1)
-            }
             batch.seq_id[0]![0] = 0
             batch.logits[0] = 1
             
